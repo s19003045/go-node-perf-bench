@@ -1,0 +1,9 @@
+# benchmark outputs
+results/
+# go build artifacts
+go/perfbench
+*.test
+# node
+node_modules/
+# toolchains downloaded locally
+.toolchain/

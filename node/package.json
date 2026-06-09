@@ -1,0 +1,10 @@
+{
+  "name": "node-perf-bench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Node.js side of the Go-vs-Node performance benchmark (CPU-bound, I/O-bound, heartbeat-under-load)",
+  "scripts": {
+    "bench": "node src/index.js"
+  }
+}
