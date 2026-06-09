@@ -51,7 +51,9 @@ async function main() {
                 intervalMs: num(args.interval, 50),
                 durationMs: num(args.duration, 5000),
                 taskLimit: num(args.taskLimit, 5000000),
+                blockMs: num(args.blockMs, 300),
                 mode: args.mode || "main",
+                work: args.work || "cpu",
                 out: args.out,
             });
             break;

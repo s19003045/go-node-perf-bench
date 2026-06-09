@@ -24,6 +24,7 @@ $IoDelay    = EnvOr "IO_DELAY"    20
 $HbInterval = EnvOr "HB_INTERVAL" 50
 $HbDuration = EnvOr "HB_DURATION" 5000
 $HbTask     = EnvOr "HB_TASK"     5000000
+$HbBlock    = EnvOr "HB_BLOCK"    300
 $Workers    = EnvOr "WORKERS"     ([Environment]::ProcessorCount)
 $Go         = EnvOr "GO_BIN"      "go"
 
@@ -42,8 +43,11 @@ Write-Host "`n### Node ###"
 node $NodeEntry cpu       --limit $CpuLimit --iterations $CpuIters --workers 1        --out "$Results/node-cpu-1.json"        | NoJson
 node $NodeEntry cpu       --limit $CpuLimit --iterations $CpuIters --workers $Workers --out "$Results/node-cpu-N.json"        | NoJson
 node $NodeEntry io        --requests $IoReq --concurrency $IoConc  --delay $IoDelay   --out "$Results/node-io.json"           | NoJson
-node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --taskLimit $HbTask --mode main   --out "$Results/node-hb-main.json"   | NoJson
-node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --taskLimit $HbTask --mode worker --out "$Results/node-hb-worker.json" | NoJson
+node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --taskLimit $HbTask --work cpu   --mode main   --out "$Results/node-hb-cpu-main.json"     | NoJson
+node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --taskLimit $HbTask --work cpu   --mode worker --out "$Results/node-hb-cpu-worker.json"   | NoJson
+node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --blockMs $HbBlock  --work block --mode main   --out "$Results/node-hb-block-main.json"   | NoJson
+node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --blockMs $HbBlock  --work block --mode async  --out "$Results/node-hb-block-async.json"  | NoJson
+node $NodeEntry heartbeat --interval $HbInterval --duration $HbDuration --blockMs $HbBlock  --work block --mode worker --out "$Results/node-hb-block-worker.json" | NoJson
 
 Write-Host "`n"
 $goCmd = Get-Command $Go -ErrorAction SilentlyContinue
@@ -58,7 +62,8 @@ if ($goCmd) {
         & $goBin cpu       --limit $CpuLimit --iterations $CpuIters --workers 1        --out "$Results/go-cpu-1.json"  | NoJson
         & $goBin cpu       --limit $CpuLimit --iterations $CpuIters --workers $Workers --out "$Results/go-cpu-N.json"  | NoJson
         & $goBin io        --requests $IoReq --concurrency $IoConc  --delay $IoDelay   --out "$Results/go-io.json"     | NoJson
-        & $goBin heartbeat --interval $HbInterval --duration $HbDuration --taskLimit $HbTask --workers $Workers --out "$Results/go-hb.json" | NoJson
+        & $goBin heartbeat --interval $HbInterval --duration $HbDuration --taskLimit $HbTask --work cpu   --workers $Workers --out "$Results/go-hb-cpu.json"   | NoJson
+        & $goBin heartbeat --interval $HbInterval --duration $HbDuration --blockMs $HbBlock  --work block --workers $Workers --out "$Results/go-hb-block.json" | NoJson
     } else {
         Write-Host "Go build failed; skipping Go benchmarks."
     }

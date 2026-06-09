@@ -14,7 +14,10 @@
 |---|---|---|
 | **cpu** | 純整數運算（質數計算）的吞吐 | Node 是不是「CPU 很慢」？單執行緒 vs `worker_threads` vs Go goroutines |
 | **io** | 高併發 HTTP（下游延遲、無 CPU）的吞吐/延遲 | I/O 併發**不是** Node 的弱點 |
-| **heartbeat** ⭐ | 一個該每 50ms 跳的 ticker，在 CPU 重負載下的 gap | **重現 40s gap**：單一 event loop 被阻塞 → 心跳餓死；把重活移走 → 健康 |
+| **heartbeat** ⭐ | 一個該每 50ms 跳的 ticker，在負載下的 gap（負載可選 `--work cpu`＝忙著算，或 `--work block`＝被同步 syscall 卡住） | **重現 40s gap**：單一 event loop 被阻塞 → 心跳餓死；把重活移走 / 改 async → 健康 |
+
+> **`--work block` 就是在模擬 `execSync('ipfs ...')` / `readFileSync()`**：用 `Atomics.wait`（Node）/ `time.Sleep`（Go）把執行緒「停在 syscall 上、零 CPU」。
+> 它做出比 CPU 版更銳利的論點——**CPU 明明閒著，單一 event loop 卻被凍住**，證明病灶不是「算太慢」而是「event loop 被同步呼叫卡住」。
 
 兩語言的 CPU 演算法**完全相同**（trial-division 質數計算，純整數、無函式庫差異），
 確保比的是 runtime 而非某個原生庫。
@@ -40,10 +43,16 @@ HB_TASK=8000000 HB_INTERVAL=20 CPU_ITERS=56 ./run.sh
 ```bash
 node node/src/index.js cpu       --limit 1000000 --iterations 56 --workers 28
 node node/src/index.js io        --requests 5000 --concurrency 200 --delay 20
-node node/src/index.js heartbeat --interval 50 --duration 5000 --taskLimit 5000000 --mode main
-node node/src/index.js heartbeat --interval 50 --duration 5000 --taskLimit 5000000 --mode worker
+# work=cpu (忙著算)：main 餓死 / worker 健康
+node node/src/index.js heartbeat --taskLimit 5000000 --work cpu --mode main
+node node/src/index.js heartbeat --taskLimit 5000000 --work cpu --mode worker
+# work=block (模擬 execSync/readFileSync, 同步卡住、CPU 閒置)：main 餓死 / async 與 worker 健康
+node node/src/index.js heartbeat --blockMs 300 --work block --mode main
+node node/src/index.js heartbeat --blockMs 300 --work block --mode async
+node node/src/index.js heartbeat --blockMs 300 --work block --mode worker
 
-(cd go && go run . heartbeat --interval 50 --duration 5000 --taskLimit 5000000)
+(cd go && go run . heartbeat --work cpu   --taskLimit 5000000)
+(cd go && go run . heartbeat --work block --blockMs 300)
 ```
 
 ### 安裝 Go（若要比較 Go）
@@ -90,12 +99,20 @@ benchmark 程式碼本身完全跨平台（Node 與 Go 都原生支援 Windows�
   go    9005.6   52.75    56.06
   node  5236.31  72.79    74.69     <- Node 也輕鬆扛住高併發，無病態現象
 
-## ⭐ Heartbeat under CPU load  (lower maxGap / lateTicks = healthier)
-  lang  mode            expected(ms)  maxGap(ms)  lateTicks
-  go    goroutines x28  50            50.00       0/99      <- 28 核全滿載，心跳仍準
-  node  main            50            375.58      13/13     <- 心跳被餓死 (== 40s gap 的縮影)
-  node  worker          50            50.28       0/102     <- 把重活丟 worker → 立刻healthy
+## ⭐ Heartbeat under load  (lower maxGap / lateTicks = healthier)
+  lang  work   mode            expected(ms)  maxGap(ms)  lateTicks
+  go    cpu    goroutines x28  50            50.00       0/59      <- 28 核全滿載，心跳仍準
+  node  cpu    main            50            396.75      8/8       <- CPU 阻塞 → 餓死
+  node  cpu    worker          50            50.28       0/65      <- 丟 worker → healthy
+  go    block  goroutines x28  50            50.01       0/59      <- 同步卡住, 其他 goroutine 照跑
+  node  block  main            50            300.46      9/9       <- 同步卡住 → 餓死 (CPU 卻閒著!)
+  node  block  async           50            50.57       0/58      <- 改 async API → healthy
+  node  block  worker          50            50.62       0/59      <- 丟 worker → healthy
 ```
+
+> `block` 列（模擬 execSync/readFileSync）最關鍵：`node block main` 餓死時 **CPU 是閒置的**——
+> 純粹是 event loop 被同步呼叫停住。而 `node block async`（≈ `execSync→exec`、`readFileSync→fs.promises`）
+> 立刻就健康了，這正是 `tsgc-ipc-api` 的 P0 修復手法。
 
 ---
 
@@ -103,8 +120,11 @@ benchmark 程式碼本身完全跨平台（Node 與 Go 都原生支援 Windows�
 
 1. **Node 不是「CPU 慢」**：單執行緒這個熱迴圈，Node(V8 JIT) 甚至比 Go 快。
    → 「為了算得更快而改寫成 Go」這個理由，**站不住腳**。
-2. **真正的病灶是「單一 event loop 被阻塞」**：`node/main` 的心跳 gap 衝到 375ms（≈ 單一阻塞任務的長度），
-   13/13 全部遲到。把 taskLimit 放大，gap 就跟著放大——這就是 `tsgc-ipc-api` 那個 29.5s / 40s gap 的縮影。
+2. **真正的病灶是「單一 event loop 被阻塞」**：`node/main` 的心跳 gap 衝到 ~375ms（≈ 單一阻塞任務的長度），
+   全部遲到。把 taskLimit / blockMs 放大，gap 就跟著放大——這就是 `tsgc-ipc-api` 那個 29.5s / 40s gap 的縮影。
+2b. **`work=block` 直指真實根因**：把負載換成同步阻塞（模擬 `execSync('ipfs')` / `readFileSync`），
+   `node/main` 一樣餓死，**但此時 CPU 是閒置的**——證明病灶不是「算太慢」，而是「event loop 被同步呼叫停住」。
+   而 `node/async`（改用 async API）立刻健康，這正是專案裡把 ipfs `execSync` 改成 `await exec` 的 P0 修法。
 3. **解法是把重活移出 latency 敏感的執行緒，不是換語言**：`node/worker` 跟 Go 一樣健康（50ms、0 遲到）。
    Node 用 `worker_threads` 就能達到 Go 用 goroutines 的效果。
 4. **I/O 併發兩者都行**：Node 5000+ req/s 毫無病態；Go 吞吐更高，但這不是 `tsgc-ipc-api` 的痛點。
@@ -152,7 +172,8 @@ go-node-perf-bench/
 | `IO_REQ` / `IO_CONC` / `IO_DELAY` | 5000 / 200 / 20 | I/O 請求數 / 併發 / 模擬延遲(ms) |
 | `HB_INTERVAL` | 50 | 心跳間隔(ms) |
 | `HB_DURATION` | 5000 | 心跳情境總時長(ms) |
-| `HB_TASK` | 5000000 | 心跳情境下每個 CPU 任務的大小（≈370ms/任務；放大可放大 gap） |
+| `HB_TASK` | 5000000 | 心跳 `work=cpu` 下每個任務的大小（≈370ms/任務；放大可放大 gap） |
+| `HB_BLOCK` | 300 | 心跳 `work=block` 下每次同步阻塞的毫秒數（模擬 execSync/readFileSync 的等待時間） |
 | `WORKERS` | nproc | 並行 worker/goroutine 數 |
 
 > 想把 `node/main` 的餓死做得像真實的 29.5s？把 `HB_TASK` 調到 ~4 億（每任務數十秒），

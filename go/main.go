@@ -40,13 +40,15 @@ func main() {
 		interval := fs.Int("interval", 50, "")
 		duration := fs.Int("duration", 5000, "")
 		taskLimit := fs.Int("taskLimit", 5000000, "")
+		blockMs := fs.Int("blockMs", 300, "")
+		work := fs.String("work", "cpu", "cpu|block")
 		workers := fs.Int("workers", 0, "")
 		out := fs.String("out", "", "")
 		_ = fs.Parse(args)
 		if *workers <= 0 {
 			*workers = runtime.NumCPU()
 		}
-		runHeartbeat(*interval, *duration, *taskLimit, *workers, *out)
+		runHeartbeat(*interval, *duration, *taskLimit, *workers, *work, *blockMs, *out)
 	default:
 		fmt.Println("unknown scenario:", cmd)
 		os.Exit(1)

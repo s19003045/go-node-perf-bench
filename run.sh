@@ -19,6 +19,7 @@ IO_DELAY=${IO_DELAY:-20}
 HB_INTERVAL=${HB_INTERVAL:-50}
 HB_DURATION=${HB_DURATION:-5000}
 HB_TASK=${HB_TASK:-5000000}
+HB_BLOCK=${HB_BLOCK:-300}
 WORKERS=${WORKERS:-$(nproc 2>/dev/null || echo 4)}
 GO=${GO_BIN:-go}
 
@@ -35,8 +36,11 @@ echo "### Node ###"
 $NODE cpu       --limit $CPU_LIMIT --iterations $CPU_ITERS --workers 1        --out "$RESULTS/node-cpu-1.json"        | grep -v RESULT_JSON
 $NODE cpu       --limit $CPU_LIMIT --iterations $CPU_ITERS --workers $WORKERS --out "$RESULTS/node-cpu-N.json"        | grep -v RESULT_JSON
 $NODE io        --requests $IO_REQ --concurrency $IO_CONC  --delay $IO_DELAY  --out "$RESULTS/node-io.json"           | grep -v RESULT_JSON
-$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --taskLimit $HB_TASK --mode main   --out "$RESULTS/node-hb-main.json"   | grep -v RESULT_JSON
-$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --taskLimit $HB_TASK --mode worker --out "$RESULTS/node-hb-worker.json" | grep -v RESULT_JSON
+$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --taskLimit $HB_TASK --work cpu   --mode main   --out "$RESULTS/node-hb-cpu-main.json"     | grep -v RESULT_JSON
+$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --taskLimit $HB_TASK --work cpu   --mode worker --out "$RESULTS/node-hb-cpu-worker.json"   | grep -v RESULT_JSON
+$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --blockMs $HB_BLOCK  --work block --mode main   --out "$RESULTS/node-hb-block-main.json"   | grep -v RESULT_JSON
+$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --blockMs $HB_BLOCK  --work block --mode async  --out "$RESULTS/node-hb-block-async.json"  | grep -v RESULT_JSON
+$NODE heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --blockMs $HB_BLOCK  --work block --mode worker --out "$RESULTS/node-hb-block-worker.json" | grep -v RESULT_JSON
 
 echo ""
 if command -v "$GO" >/dev/null 2>&1; then
@@ -46,7 +50,8 @@ if command -v "$GO" >/dev/null 2>&1; then
         "$GOBIN_OUT" cpu       --limit $CPU_LIMIT --iterations $CPU_ITERS --workers 1        --out "$RESULTS/go-cpu-1.json"  | grep -v RESULT_JSON
         "$GOBIN_OUT" cpu       --limit $CPU_LIMIT --iterations $CPU_ITERS --workers $WORKERS --out "$RESULTS/go-cpu-N.json"  | grep -v RESULT_JSON
         "$GOBIN_OUT" io        --requests $IO_REQ --concurrency $IO_CONC  --delay $IO_DELAY  --out "$RESULTS/go-io.json"     | grep -v RESULT_JSON
-        "$GOBIN_OUT" heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --taskLimit $HB_TASK --workers $WORKERS --out "$RESULTS/go-hb.json" | grep -v RESULT_JSON
+        "$GOBIN_OUT" heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --taskLimit $HB_TASK --work cpu   --workers $WORKERS --out "$RESULTS/go-hb-cpu.json"   | grep -v RESULT_JSON
+        "$GOBIN_OUT" heartbeat --interval $HB_INTERVAL --duration $HB_DURATION --blockMs $HB_BLOCK  --work block --workers $WORKERS --out "$RESULTS/go-hb-block.json" | grep -v RESULT_JSON
     else
         echo "Go build failed; skipping Go benchmarks."
     fi

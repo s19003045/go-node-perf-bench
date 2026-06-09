@@ -14,15 +14,22 @@ import (
 //
 // Answer: no. Go's scheduler runs goroutines across GOMAXPROCS OS threads and
 // preempts long-running ones, so the ticker goroutine keeps firing on time even
-// while every core is busy. This is the structural difference from Node's single
-// event loop -- and why "move heavy work off the event loop" (worker_threads) is
-// the Node-side equivalent fix rather than a language rewrite.
-func runHeartbeat(intervalMs, durationMs, taskLimit, workers int, out string) {
+// while every core is busy (work=cpu) or while goroutines are parked on blocking
+// syscalls (work=block, e.g. time.Sleep / a blocking read). This is the
+// structural difference from Node's single event loop -- and why "move heavy work
+// off the event loop" (worker_threads / async API) is the Node-side equivalent
+// fix rather than a language rewrite.
+//
+//   work=cpu   : goroutines busy computing (countPrimes)
+//   work=block : goroutines parked on a blocking wait (time.Sleep) -- the Go
+//                analogue of execSync / readFileSync. Other goroutines (the
+//                ticker) keep running, so the heartbeat stays healthy.
+func runHeartbeat(intervalMs, durationMs, taskLimit, workers int, work string, blockMs int, out string) {
 	duration := time.Duration(durationMs) * time.Millisecond
 	interval := time.Duration(intervalMs) * time.Millisecond
 	deadline := time.Now().Add(duration)
 
-	// CPU load goroutines
+	// load goroutines
 	var wg sync.WaitGroup
 	var taskMu sync.Mutex
 	tasks := 0
@@ -32,7 +39,11 @@ func runHeartbeat(intervalMs, durationMs, taskLimit, workers int, out string) {
 			defer wg.Done()
 			local := 0
 			for time.Now().Before(deadline) {
-				countPrimes(taskLimit)
+				if work == "block" {
+					time.Sleep(time.Duration(blockMs) * time.Millisecond)
+				} else {
+					countPrimes(taskLimit)
+				}
 				local++
 			}
 			taskMu.Lock()
@@ -78,7 +89,7 @@ func runHeartbeat(intervalMs, durationMs, taskLimit, workers int, out string) {
 	writeResult(Result{
 		Lang:     "go",
 		Scenario: "heartbeat",
-		Params:   map[string]interface{}{"intervalMs": intervalMs, "durationMs": durationMs, "taskLimit": taskLimit, "mode": "goroutines", "workers": workers},
+		Params:   map[string]interface{}{"intervalMs": intervalMs, "durationMs": durationMs, "taskLimit": taskLimit, "blockMs": blockMs, "mode": "goroutines", "work": work, "workers": workers},
 		Metrics: map[string]interface{}{
 			"expectedIntervalMs": intervalMs,
 			"ticks":              len(measured),
@@ -86,9 +97,9 @@ func runHeartbeat(intervalMs, durationMs, taskLimit, workers int, out string) {
 			"gapMeanMs":          s.Mean,
 			"gapP99Ms":           s.P99,
 			"gapMaxMs":           s.Max,
-			"cpuTasks":           tasks,
+			"units":              tasks,
 		},
-		Summary: fmt.Sprintf("[go][heartbeat][goroutines] interval=%dms dur=%dms workers=%d -> maxGap=%.2fms p99=%.2fms lateTicks=%d/%d (cpuTasks=%d)",
-			intervalMs, durationMs, workers, s.Max, s.P99, late, len(measured), tasks),
+		Summary: fmt.Sprintf("[go][heartbeat][work=%s][goroutines] interval=%dms dur=%dms workers=%d -> maxGap=%.2fms p99=%.2fms lateTicks=%d/%d (units=%d)",
+			work, intervalMs, durationMs, workers, s.Max, s.P99, late, len(measured), tasks),
 	}, out)
 }

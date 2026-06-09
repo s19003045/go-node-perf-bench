@@ -85,12 +85,20 @@ if (io.length) {
 // ---- Heartbeat ----
 const hb = results.filter((r) => r.scenario === "heartbeat");
 if (hb.length) {
-    console.log("\n## ⭐ Heartbeat under CPU load  (lower maxGap / lateTicks = healthier)");
-    hb.sort((a, b) => a.lang.localeCompare(b.lang));
+    console.log("\n## ⭐ Heartbeat under load  (lower maxGap / lateTicks = healthier)");
+    console.log("   work=cpu: busy computing.  work=block: parked on a sync syscall (execSync/readFileSync), CPU idle.");
+    const workRank = { cpu: 0, block: 1 };
+    hb.sort(
+        (a, b) =>
+            (workRank[a.params.work] ?? 9) - (workRank[b.params.work] ?? 9) ||
+            a.params.mode.localeCompare(b.params.mode) ||
+            a.lang.localeCompare(b.lang)
+    );
     table(
-        ["lang", "mode", "expected(ms)", "maxGap(ms)", "p99Gap(ms)", "lateTicks"],
+        ["lang", "work", "mode", "expected(ms)", "maxGap(ms)", "p99Gap(ms)", "lateTicks"],
         hb.map((r) => [
             r.lang,
+            r.params.work || "cpu",
             r.params.mode + (r.params.workers ? " x" + r.params.workers : ""),
             get(r, "expectedIntervalMs"),
             get(r, "gapMaxMs"),
@@ -99,10 +107,13 @@ if (hb.length) {
         ])
     );
     console.log(
-        "  → node/main starves (maxGap ≈ one blocking task). node/worker & go stay near the interval."
+        "  → node/main starves (maxGap ≈ one unit). node/worker, node/async & go stay near the interval."
     );
     console.log(
-        "  → This is the tsgc-ipc-api OPC heartbeat 40s-gap phenomenon, in miniature."
+        "  → work=block proves it isn't CPU speed: the loop freezes while the CPU is idle, just parked on a sync call."
+    );
+    console.log(
+        "  → This is the tsgc-ipc-api OPC heartbeat 40s-gap phenomenon (execSync ipfs / readFileSync), in miniature."
     );
 }
 
