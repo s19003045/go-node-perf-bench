@@ -20,10 +20,10 @@ import (
 // off the event loop" (worker_threads / async API) is the Node-side equivalent
 // fix rather than a language rewrite.
 //
-//   work=cpu   : goroutines busy computing (countPrimes)
-//   work=block : goroutines parked on a blocking wait (time.Sleep) -- the Go
-//                analogue of execSync / readFileSync. Other goroutines (the
-//                ticker) keep running, so the heartbeat stays healthy.
+//	work=cpu   : goroutines busy computing (countPrimes)
+//	work=block : goroutines parked on a blocking wait (time.Sleep) -- the Go
+//	             analogue of execSync / readFileSync. Other goroutines (the
+//	             ticker) keep running, so the heartbeat stays healthy.
 func runHeartbeat(intervalMs, durationMs, taskLimit, workers int, work string, blockMs int, out string) {
 	duration := time.Duration(durationMs) * time.Millisecond
 	interval := time.Duration(intervalMs) * time.Millisecond
