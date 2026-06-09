@@ -51,6 +51,26 @@ node node/src/index.js heartbeat --interval 50 --duration 5000 --taskLimit 50000
 - 免 sudo 本機安裝（本 repo 用過的方式）：下載 tarball 解壓到 `.toolchain/`（已被 gitignore），
   再 `GO_BIN=$PWD/.toolchain/go/bin/go ./run.sh`。
 
+### 在 Windows 上跑
+benchmark 程式碼本身完全跨平台（Node 與 Go 都原生支援 Windows）；只有 orchestrator 是 shell 腳本。
+
+- **PowerShell（原生，推薦）**：用 `run.ps1`
+  ```powershell
+  .\run.ps1
+  # 調參數：
+  $env:HB_TASK=8000000; .\run.ps1
+  # 指定 Go 路徑：
+  $env:GO_BIN="C:\Go\bin\go.exe"; .\run.ps1
+  ```
+  若遇到執行原則限制：`powershell -ExecutionPolicy Bypass -File .\run.ps1`
+- **Git Bash / WSL**：直接用 `./run.sh`（與 Linux/macOS 相同）。
+- **不想用腳本**：直接跑單一情境的指令（完全跨平台）：
+  ```powershell
+  node node\src\index.js heartbeat --interval 50 --duration 5000 --taskLimit 5000000 --mode main
+  cd go; go run . heartbeat --interval 50 --duration 5000 --taskLimit 5000000
+  ```
+- Windows 安裝：Node → https://nodejs.org/ ；Go → https://go.dev/dl/ 的 `.msi`。
+
 ---
 
 ## 範例結果（28 核機器, node v18.20.7, go 1.26.4）
